@@ -10,32 +10,32 @@ app.use(cors());
 // 🔥 expose le dossier public
 app.use("/public", express.static(path.join(__dirname, "public")));
 
-// 📡 API photos dynamique (garde les vrais noms)
+// 📡 API auto depuis dossier
 app.get("/photos", (req, res) => {
-  const folderPath = path.join(__dirname, "public/photos");
+  const folder = path.join(__dirname, "public/photos");
 
-  fs.readdir(folderPath, (err, files) => {
+  fs.readdir(folder, (err, files) => {
     if (err) {
-      return res.status(500).json({ error: "Erreur lecture dossier" });
+      return res.status(500).json({ error: "Cannot read folder" });
     }
 
     const photos = files
-      .filter(file =>
-        file.endsWith(".jpg") ||
-        file.endsWith(".jpeg") ||
-        file.endsWith(".png") ||
-        file.endsWith(".webp")
+      .filter(f =>
+        f.endsWith(".jpg") ||
+        f.endsWith(".png") ||
+        f.endsWith(".webp")
       )
       .map((file, index) => ({
         id: index,
-        name: file, // 👈 tu gardes IMG_0045.jpg
-        url: `http://localhost:3000/public/photos/${file}`,
+        name: file,
+        url: `https://gallery-appb.onrender.com/public/photos/${file}`
       }));
 
     res.json(photos);
   });
 });
 
+// ⚠️ IMPORTANT Render port
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
