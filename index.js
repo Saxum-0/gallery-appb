@@ -1,88 +1,69 @@
-const express = require("express");
-const cors = require("cors");
-const path = require("path");
-const fs = require("fs");
-const sharp = require("sharp");
-
-const app = express();
-
-app.use(cors());
-
-// ❌ On ne sert plus les fichiers directement
-// app.use("/public", express.static(path.join(__dirname, "public")));
-
-// 📡 GET : liste des photos
-app.get("/photos", (req, res) => {
-  const folder = path.join(__dirname, "public/photos");
-
-  fs.readdir(folder, (err, files) => {
-    if (err) {
-      return res.status(500).json({ error: "Cannot read folder" });
-    }
-
-    const photos = files
-      .filter((f) =>
-        f.endsWith(".jpg") ||
-        f.endsWith(".png") ||
-        f.endsWith(".webp")
-      )
-      .map((file, index) => ({
-        id: index,
-        name: file,
-        url: `https://gallery-appb.onrender.com/photo/${file}`
-      }));
-
-    res.json(photos);
-  });
-});
-
 // 🖼️ GET : image protégée + watermark
 app.get("/photo/:name", async (req, res) => {
   const filePath = path.join(__dirname, "public/photos", req.params.name);
 
+  // Vérifier que le fichier existe
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: "Image not found" });
+  }
+
   try {
     const image = sharp(filePath);
-    const { width, height } = await image.metadata();
+    const { width, height, format } = await image.metadata();
 
-    // 🔥 watermark diagonal répété
+    // ✅ Watermark SANS pattern (librsvg le gère mal)
+    // On répète manuellement le texte en grille
+    const cols = Math.ceil(width / 300);
+    const rows = Math.ceil(height / 200);
+
+    let texts = "";
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const x = c * 300;
+        const y = r * 200 + 50;
+        texts += `
+          <text 
+            x="${x}" y="${y}"
+            font-size="28"
+            fill="white"
+            opacity="0.15"
+            font-family="Arial"
+            transform="rotate(-30, ${x}, ${y})">
+            Pixel Flow
+          </text>`;
+      }
+    }
+
     const watermarkSvg = `
-      <svg width="${width}" height="${height}">
-        <defs>
-          <pattern id="wm" patternUnits="userSpaceOnUse" width="300" height="200" patternTransform="rotate(-30)">
-            <text x="0" y="50"
-              font-size="28"
-              fill="white"
-              opacity="0.12"
-              font-family="Arial">
-              Pixel Flow
-            </text>
-          </pattern>
-        </defs>
-
-        <rect width="100%" height="100%" fill="url(#wm)" />
+      <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+        ${texts}
       </svg>
     `;
+
+    // ✅ Content-Type dynamique selon le format réel
+    const mimeTypes = {
+      jpeg: "image/jpeg",
+      jpg: "image/jpeg",
+      png: "image/png",
+      webp: "image/webp",
+    };
+    const contentType = mimeTypes[format] || "image/jpeg";
 
     const buffer = await image
       .composite([
         {
           input: Buffer.from(watermarkSvg),
-          blend: "over"
-        }
+          blend: "over",
+        },
       ])
       .toBuffer();
 
-    res.set("Content-Type", "image/jpeg");
+    res.set("Content-Type", contentType);
+    res.set("Cache-Control", "public, max-age=86400"); // cache 1 jour
     res.send(buffer);
 
   } catch (err) {
-    res.status(404).json({ error: "Image not found" });
+    console.error("Sharp error:", err); // ← tu verras l'erreur dans les logs Render
+    res.status(500).json({ error: "Failed to process image", detail: err.message });
   }
-});
-
-// ⚠️ Render port obligatoire
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-  console.log(`API running on port ${PORT}`);
 });
