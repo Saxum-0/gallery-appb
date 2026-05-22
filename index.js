@@ -1,8 +1,42 @@
+const express = require("express");
+const cors = require("cors");
+const path = require("path");
+const fs = require("fs");
+const sharp = require("sharp");
+
+const app = express();
+
+app.use(cors());
+
+// 📡 GET : liste des photos
+app.get("/photos", (req, res) => {
+  const folder = path.join(__dirname, "public/photos");
+
+  fs.readdir(folder, (err, files) => {
+    if (err) {
+      return res.status(500).json({ error: "Cannot read folder" });
+    }
+
+    const photos = files
+      .filter((f) =>
+        f.endsWith(".jpg") ||
+        f.endsWith(".png") ||
+        f.endsWith(".webp")
+      )
+      .map((file, index) => ({
+        id: index,
+        name: file,
+        url: `https://gallery-appb.onrender.com/photo/${file}`
+      }));
+
+    res.json(photos);
+  });
+});
+
 // 🖼️ GET : image protégée + watermark
 app.get("/photo/:name", async (req, res) => {
   const filePath = path.join(__dirname, "public/photos", req.params.name);
 
-  // Vérifier que le fichier existe
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: "Image not found" });
   }
@@ -11,8 +45,6 @@ app.get("/photo/:name", async (req, res) => {
     const image = sharp(filePath);
     const { width, height, format } = await image.metadata();
 
-    // ✅ Watermark SANS pattern (librsvg le gère mal)
-    // On répète manuellement le texte en grille
     const cols = Math.ceil(width / 300);
     const rows = Math.ceil(height / 200);
 
@@ -40,7 +72,6 @@ app.get("/photo/:name", async (req, res) => {
       </svg>
     `;
 
-    // ✅ Content-Type dynamique selon le format réel
     const mimeTypes = {
       jpeg: "image/jpeg",
       jpg: "image/jpeg",
@@ -50,20 +81,21 @@ app.get("/photo/:name", async (req, res) => {
     const contentType = mimeTypes[format] || "image/jpeg";
 
     const buffer = await image
-      .composite([
-        {
-          input: Buffer.from(watermarkSvg),
-          blend: "over",
-        },
-      ])
+      .composite([{ input: Buffer.from(watermarkSvg), blend: "over" }])
       .toBuffer();
 
     res.set("Content-Type", contentType);
-    res.set("Cache-Control", "public, max-age=86400"); // cache 1 jour
+    res.set("Cache-Control", "public, max-age=86400");
     res.send(buffer);
 
   } catch (err) {
-    console.error("Sharp error:", err); // ← tu verras l'erreur dans les logs Render
+    console.error("Sharp error:", err);
     res.status(500).json({ error: "Failed to process image", detail: err.message });
   }
+});
+
+// ⚠️ Port Render obligatoire
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`API running on port ${PORT}`);
 });
